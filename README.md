@@ -1,21 +1,21 @@
-# Käyttökokemuksia CSC Aitan rajapinnasta
+# CSC Aitta API findings
 
-GAIK-hankkeen käyttäjäpalautetta 20.11.2026. Testasin Aitan rajapintaa lyhyillä teksteillä ja synteettisellä englanninkielisellä äänitteellä. Alla ovat pyynnöt ja niistä saadut vastaukset, jotta CSC voi toistaa havainnot.
+On 20 November 2026, I tested the Aitta API for the GAIK project using short text inputs and a synthetic English recording. The examples below show the requests and responses so CSC can reproduce the findings.
 
-## Toistettavat havainnot
+## Reproducible findings
 
-| Malli tai rajapinta | Mitä pyysin | Mitä sain |
+| Model or endpoint | What I tested | What I observed |
 | --- | --- | --- |
-| `intfloat/multilingual-e5-large` | Sama teksti, ensin `encoding_format="float"`, sitten `"base64"`. Molemmat arvot ovat OpenAPI-kuvauksessa. | Molemmilla HTTP 200 ja 1 024 luvun JSON-lista. Base64-merkkijonoa odottava asiakas saa listan. |
-| `intfloat/multilingual-e5-large` | 510 välilyönnein erotettua `a`-kirjainta, sitten 511. | Ensimmäinen palautti HTTP 200 ja ilmoitti 512 tokenia. Yhden sanan lisäys palautti HTTP 500 ilman mainintaa pituusrajasta. Syötevirhe ja tieto enimmäispituudesta auttaisivat korjaamaan pyynnön. |
-| `openai/whisper-large-v3` | Kuuden sekunnin WAV-tiedosto, `response_format=verbose_json` ja `timestamp_granularities[]=word`. | HTTP 200 ja oikea litterointi. Vastauksessa oli yksi aikaleimattu segmentti. Sanakohtaiset aikaleimat puuttuivat sekä ylätasolta että segmentistä. |
-| Litteroinnin OpenAPI-kuvaus | Vertailin koneellista määrittelyä toimivaan tiedostolähetykseen ja tekstivastaukseen. | Pyynnön tyypiksi on listattu vain `application/x-www-form-urlencoded`, vaikka reitin ohje ja toimiva WAV-lähetys käyttävät `multipart/form-data`. Onnistuneelle vastaukselle on listattu vain `application/json`, vaikka `response_format=text` palautti `text/plain`. |
+| `intfloat/multilingual-e5-large` | Sent the same text with `encoding_format="float"` and then `"base64"`. The OpenAPI specification lists both values. | Both requests returned HTTP 200 and a JSON array of 1,024 numbers. A client requesting base64 receives an array where it expects a string. |
+| `intfloat/multilingual-e5-large` | Sent 510 copies of `a` separated by spaces, then 511. | The first request returned HTTP 200 and reported 512 tokens. Adding one more `a` produced HTTP 500 with no mention of the length limit. A validation error stating the maximum input length would help callers correct the request. |
+| `openai/whisper-large-v3` | Sent a six-second WAV file with `response_format=verbose_json` and `timestamp_granularities[]=word`. | The API returned HTTP 200, an accurate transcript and one timestamped segment. Word timestamps were missing both at the top level and inside the segment. |
+| Transcription OpenAPI specification | Compared the declared media types with a successful file upload and plain-text response. | The specification lists only `application/x-www-form-urlencoded` for requests. Both the endpoint description and the working WAV upload use `multipart/form-data`. The specification lists only `application/json` for a successful response, but `response_format=text` returned `text/plain`. |
 
-**Whisper turbon saatavuus.** Samalla WAV-tiedostolla tavallinen large v3 vastasi noin sekunnissa. Turbolta ei tullut litterointia kahdella 80 sekunnin asiakasaikarajalla tehdyllä yrityksellä. Ensimmäisen jälkeen worker-rajapinnassa näkyivät tilat `failed` ja `requested`. Uusinnassa molemmat tilat näkyivät sekä ennen pyyntöä että sen jälkeen. Viiveen syy jäi avoimeksi.
+**Whisper turbo availability.** Whisper large v3 transcribed the same WAV file in about one second. Both turbo requests reached the client's 80-second timeout without a transcript. After the first attempt, the worker endpoint listed `failed` and `requested`. On the second attempt, it listed both states before and after the request. The cause of the delay remains unknown.
 
-## Kokeile itse
+## Run the checks
 
-Aja komennot repon juuressa Bunilla (testattu versiolla 1.4.2). Paketteja ei tarvitse asentaa. `spec` lukee julkista OpenAPI-kuvausta. Muita kokeita varten aseta oma Aitta-avain ympäristömuuttujaan `AITTA_API_TOKEN`.
+Run these commands from the repository root with Bun (tested with version 1.4.2). The checks use no external packages. The `spec` check reads the public OpenAPI specification. For the other checks, set the `AITTA_API_TOKEN` environment variable to your own Aitta token.
 
 ```sh
 bun check.mjs spec
@@ -24,12 +24,12 @@ bun check.mjs whisper
 bun check.mjs turbo
 ```
 
-`e5` lähettää neljä pyyntöä reitille `POST /openai/v1/embeddings`. Puhetestit lähettävät mukana olevan [testiäänitteen](notebooks.wav) reitille `POST /openai/v1/audio/transcriptions`. `turbo` tarkistaa myös workerien tilan ennen litterointiyritystä ja sen jälkeen. Tuloste näyttää kulloisenkin API-vastauksen.
+`e5` sends four requests to `POST /openai/v1/embeddings`. The speech checks upload the [sample recording](notebooks.wav) to `POST /openai/v1/audio/transcriptions`. The `turbo` check also reads the worker status before and after the transcription attempt. Each check prints what the API returned for that run.
 
-## Muut havainnot 20.11.2026
+## Other observations from 20 November 2026
 
-- **Dokumenttihaku demossa.** Yhden sivun indeksointi kesti ensimmäisessä ajossa noin 76 sekuntia ja uusinnassa sekunnin. Uusinnan alussa e5 näkyi käynnissä. Vastaus lähdeviitteineen tuli 4–5 sekunnissa.
-- **gpt-oss 120B ja Gemma 4 31B.** Saman laskun luokittelu demossa kesti gpt-ossilla noin 4 sekuntia ja Gemmalla noin 18 sekuntia. gpt-oss tunnisti summat `EUR 60` ja `60 euros` samoiksi ensin 54 sekunnissa ja viimeisellä ajolla 2,3 sekunnissa. Nämä ovat yksittäisiä mittauksia. Usean käyttäjän kuormaa ei mitattu.
-- **Suorat mallipyynnöt.** Gemma luki PNG-kuvasta laskun numeron `4827` oikein noin viidessä sekunnissa. gpt-oss palautti `reasoning_effort=none`-asetuksella HTTP 400:n ja asetuksella `low` HTTP 200:n sekä päättelyä. Nämä kertovat testattujen mallien käyttäytymisestä.
+- **Document search in the demo.** Indexing one page took about 76 seconds on the first run and one second on the repeat run. The demo showed e5 as running at the start of the repeat. Once the page was indexed, the demo answered the question with a source citation in 4–5 seconds.
+- **gpt-oss 120B and Gemma 4 31B.** In the demo, gpt-oss classified the sample invoice in about 4 seconds and Gemma classified it in about 18 seconds. In a separate task, gpt-oss correctly judged `EUR 60` and `60 euros` to be equivalent. The first evaluation took 54 seconds and the last took 2.3 seconds. These timings come from individual requests. The tests did not measure concurrent user load.
+- **Direct model requests.** Gemma correctly read invoice number `4827` from a PNG image in about five seconds. gpt-oss returned HTTP 400 with `reasoning_effort=none`. With `low`, it returned HTTP 200 and included reasoning in the response.
 
-Aitan ylläpitämät kuvaukset löytyvät [OpenAPI-määrittelystä](https://aitta-api.csc.fi/openapi.json) ja [LUMIn käyttöohjeesta](https://docs.lumi-supercomputer.eu/laif/inference/aitta/).
+Aitta's API and usage limits are documented in the [OpenAPI specification](https://aitta-api.csc.fi/openapi.json) and the [LUMI user guide](https://docs.lumi-supercomputer.eu/laif/inference/aitta/).
